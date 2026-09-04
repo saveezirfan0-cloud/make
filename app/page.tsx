@@ -1,10 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Blueprint, BlueprintModule, LogEntry, RunResult } from '@/lib/engine/types';
+import type { Blueprint, LogEntry, RunResult } from '@/lib/engine/types';
 import { extractSecrets, inspectBlueprint } from '@/lib/blueprint';
+import FlowEditor from './components/FlowEditor';
 
 const LS_KEY = 'blueprint-runner-state-v1';
+const EMPTY_BP = '{\n  "name": "New scenario",\n  "subflows": [{ "flow": [] }],\n  "metadata": { "version": 1 }\n}';
 
 interface KV {
   key: string;
@@ -24,52 +26,6 @@ function loadState(): PersistedState | null {
   } catch {
     return null;
   }
-}
-
-function ModuleTree({ modules, depth = 0 }: { modules: BlueprintModule[]; depth?: number }) {
-  return (
-    <>
-      {modules.map((m, i) => {
-        const app = m.module.split(':')[0];
-        const cls =
-          app === 'http'
-            ? 'app-http'
-            : app === 'airtable'
-              ? 'app-airtable'
-              : app === 'builtin'
-                ? 'app-builtin'
-                : app === 'util'
-                  ? 'app-util'
-                  : 'app-other';
-        const label = m.metadata?.designer?.name;
-        return (
-          <div key={`${m.id}-${i}`}>
-            <div className="mod" style={{ paddingLeft: depth * 16 }}>
-              <span className="mid">[{m.id}]</span> <span className={cls}>{m.module}</span>
-              {label ? <span className="mid"> — {label}</span> : null}
-              {m.filter ? <span className="mid"> ⛉ filter</span> : null}
-            </div>
-            {(m.branches ?? []).map((b, bi) => (
-              <div key={bi}>
-                <div className="mod mid" style={{ paddingLeft: (depth + 1) * 16 }}>
-                  ↳ {b.type === 'else' ? 'else' : `if ${b.label || `branch ${bi + 1}`}`}
-                </div>
-                <ModuleTree modules={b.flow ?? []} depth={depth + 2} />
-              </div>
-            ))}
-            {(m.routes ?? []).map((r, ri) => (
-              <div key={ri}>
-                <div className="mod mid" style={{ paddingLeft: (depth + 1) * 16 }}>
-                  ↳ route {ri + 1}
-                </div>
-                <ModuleTree modules={r.flow ?? []} depth={depth + 2} />
-              </div>
-            ))}
-          </div>
-        );
-      })}
-    </>
-  );
 }
 
 function LogRow({ e }: { e: LogEntry }) {
@@ -152,6 +108,7 @@ function KVTable({
 
 export default function Home() {
   const [blueprintText, setBlueprintText] = useState('');
+  const [tab, setTab] = useState<'visual' | 'json'>('visual');
   const [variables, setVariables] = useState<KV[]>([]);
   const [connections, setConnections] = useState<KV[]>([]);
   const [running, setRunning] = useState(false);
@@ -205,6 +162,10 @@ export default function Home() {
       return missing.length ? [...cur, ...missing.map((c) => ({ key: c.id, value: '' }))] : cur;
     });
   }, [info]);
+
+  const applyBlueprint = useCallback((bp: Blueprint) => {
+    setBlueprintText(JSON.stringify(bp, null, 2));
+  }, []);
 
   const loadSample = useCallback(async () => {
     const res = await fetch('/samples/medical-records-sync.json');
@@ -272,135 +233,129 @@ export default function Home() {
     [parsed.bp, variables, connections],
   );
 
-  const topFlow = parsed.bp?.subflows?.[0]?.flow ?? parsed.bp?.flow ?? [];
-
   return (
     <div className="app">
       <header className="top">
         <div className="logo">⚡</div>
         <div>
           <h1>Blueprint Runner</h1>
-          <div className="sub">Self-hosted Make.com-style scenario runner — paste a blueprint, set tokens as variables, run it</div>
+          <div className="sub">Self-hosted Make.com-style scenario builder &amp; runner</div>
+        </div>
+        <span style={{ flex: 1 }} />
+        <div className="runbar" style={{ margin: 0 }}>
+          <button className="primary" disabled={!parsed.bp || running} onClick={() => run(false)}>
+            {running ? 'Running…' : '▶ Run scenario'}
+          </button>
+          <button disabled={!parsed.bp || running} onClick={() => run(true)}>
+            Dry run
+          </button>
         </div>
       </header>
 
-      <div className="grid">
-        <div>
-          <div className="panel">
-            <h2>
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="row" style={{ marginTop: 0, marginBottom: 10 }}>
+          <div className="tabs">
+            <button className={tab === 'visual' ? 'tab active' : 'tab'} onClick={() => setTab('visual')}>
+              Visual editor
+            </button>
+            <button className={tab === 'json' ? 'tab active' : 'tab'} onClick={() => setTab('json')}>
               Blueprint JSON
-              <span>
-                <button className="small" onClick={loadSample}>
-                  Load sample scenario
-                </button>
-              </span>
-            </h2>
-            <textarea
-              className="code"
-              spellCheck={false}
-              value={blueprintText}
-              placeholder='Paste a Make.com blueprint export here ({"subflows":[{"flow":[...]}]} or {"flow":[...]})'
-              onChange={(e) => setBlueprintText(e.target.value)}
-            />
-            <div className="row">
-              <button onClick={doExtractSecrets} disabled={!parsed.bp}>
-                Extract hardcoded tokens → variables
-              </button>
-              {parsed.error ? <span className="badge" style={{ color: 'var(--err)' }}>⚠ {parsed.error}</span> : null}
-              {info ? (
-                <>
-                  <span className="badge accent">{info.moduleCount} modules</span>
-                  {info.apps.map((a) => (
-                    <span key={a} className="badge">
-                      {a}
-                    </span>
-                  ))}
-                </>
-              ) : null}
-            </div>
-            {extractedNote ? <div className="secret-note">{extractedNote}</div> : null}
+            </button>
           </div>
-
-          {topFlow.length > 0 ? (
-            <div className="panel" style={{ marginTop: 16 }}>
-              <h2>Scenario structure</h2>
-              <div className="tree">
-                <ModuleTree modules={topFlow} />
-              </div>
-            </div>
-          ) : null}
+          <span style={{ flex: 1 }} />
+          <button className="small" onClick={loadSample}>
+            Load sample scenario
+          </button>
+          <button className="small" onClick={() => setBlueprintText(EMPTY_BP)}>
+            New empty scenario
+          </button>
+          <button className="small" onClick={doExtractSecrets} disabled={!parsed.bp}>
+            Extract hardcoded tokens
+          </button>
+          {parsed.error ? <span className="badge" style={{ color: 'var(--err)' }}>⚠ {parsed.error}</span> : null}
+          {info ? <span className="badge accent">{info.moduleCount} modules</span> : null}
         </div>
 
-        <div>
-          <div className="panel">
-            <h2>
-              Variables (tokens &amp; auth)
-              <button className="small" onClick={() => setVariables([...variables, { key: '', value: '' }])}>
-                + add
-              </button>
-            </h2>
-            <KVTable
-              rows={variables}
-              onChange={setVariables}
-              keyPlaceholder="NAME"
-              valuePlaceholder="value / token"
-              mask
-            />
-            <div className="hint">
-              Reference in blueprints as <code>{'{{var.NAME}}'}</code>, e.g. header value{' '}
-              <code>{'Bearer {{var.UNITE_API_TOKEN}}'}</code>. Values live in your browser&apos;s localStorage and are
-              sent only to your own <code>/api/run</code> endpoint at execution time.
-            </div>
-          </div>
-
-          <div className="panel" style={{ marginTop: 16 }}>
-            <h2>
-              Connections
-              <button className="small" onClick={() => setConnections([...connections, { key: '', value: '' }])}>
-                + add
-              </button>
-            </h2>
-            <KVTable
-              rows={connections}
-              onChange={setConnections}
-              keyPlaceholder="__IMTCONN__ id (e.g. 10209480)"
-              valuePlaceholder="API token for this connection"
-              mask
-            />
-            <div className="hint">
-              Make blueprints reference named connections by numeric id (<code>__IMTCONN__</code>). Map each id to an
-              API token here — e.g. an Airtable personal access token with <code>data.records:read/write</code> scopes.
-              A variable named <code>AIRTABLE_TOKEN</code> works as a fallback for all Airtable modules.
-            </div>
-          </div>
-
-          <div className="runbar">
-            <button className="primary" disabled={!parsed.bp || running} onClick={() => run(false)}>
-              {running ? 'Running…' : '▶ Run scenario'}
-            </button>
-            <button disabled={!parsed.bp || running} onClick={() => run(true)}>
-              Dry run (no external calls)
-            </button>
-            {result ? (
-              <span className="runstat">
-                {result.ok ? <b className="ok">✓ finished</b> : <b className="err">✗ {result.error ?? 'failed'}</b>} ·{' '}
-                {result.ops} ops · {result.durationMs}ms
-              </span>
-            ) : null}
-          </div>
-
-          {result ? (
-            <div className="panel">
-              <h2>Execution log ({result.log.length} entries — click a row for request/output)</h2>
-              <div className="log">
-                {result.log.map((e) => (
-                  <LogRow key={e.seq} e={e} />
-                ))}
+        {tab === 'visual' ? (
+          parsed.bp ? (
+            <FlowEditor blueprint={parsed.bp} onChange={applyBlueprint} />
+          ) : (
+            <div className="canvas-empty">
+              <p>No scenario loaded yet.</p>
+              <div className="row" style={{ justifyContent: 'center' }}>
+                <button className="primary" onClick={() => setBlueprintText(EMPTY_BP)}>
+                  Start a new scenario
+                </button>
+                <button onClick={loadSample}>Load the sample</button>
               </div>
+              <p className="hint">…or switch to the JSON tab and paste a Make.com blueprint export.</p>
             </div>
-          ) : null}
+          )
+        ) : (
+          <textarea
+            className="code"
+            style={{ minHeight: 420 }}
+            spellCheck={false}
+            value={blueprintText}
+            placeholder='Paste a Make.com blueprint export here ({"subflows":[{"flow":[...]}]} or {"flow":[...]})'
+            onChange={(e) => setBlueprintText(e.target.value)}
+          />
+        )}
+        {extractedNote ? <div className="secret-note">{extractedNote}</div> : null}
+      </div>
+
+      <div className="grid">
+        <div className="panel">
+          <h2>
+            Variables (tokens &amp; auth)
+            <button className="small" onClick={() => setVariables([...variables, { key: '', value: '' }])}>
+              + add
+            </button>
+          </h2>
+          <KVTable rows={variables} onChange={setVariables} keyPlaceholder="NAME" valuePlaceholder="value / token" mask />
+          <div className="hint">
+            Reference in blueprints as <code>{'{{var.NAME}}'}</code>, e.g. <code>{'Bearer {{var.UNITE_API_TOKEN}}'}</code>.
+            Stored in your browser; can also be set server-side as <code>BP_VAR_NAME</code> env vars.
+          </div>
+        </div>
+
+        <div className="panel">
+          <h2>
+            Connections
+            <button className="small" onClick={() => setConnections([...connections, { key: '', value: '' }])}>
+              + add
+            </button>
+          </h2>
+          <KVTable
+            rows={connections}
+            onChange={setConnections}
+            keyPlaceholder="__IMTCONN__ id (e.g. 10209480)"
+            valuePlaceholder="API token for this connection"
+            mask
+          />
+          <div className="hint">
+            Map each Make connection id to an API token (e.g. an Airtable personal access token). Server-side
+            equivalent: <code>BP_CONN_&lt;id&gt;</code> env vars.
+          </div>
         </div>
       </div>
+
+      {result ? (
+        <div className="panel" style={{ marginTop: 16 }}>
+          <h2>
+            Execution log ({result.log.length} entries — click a row for request/output)
+            <span className="runstat">
+              {result.ok ? <b className="ok">✓ finished</b> : <b className="err">✗ {result.error ?? 'failed'}</b>} ·{' '}
+              {result.ops} ops · {result.durationMs}ms
+            </span>
+          </h2>
+          <div className="log">
+            {result.log.map((e) => (
+              <LogRow key={e.seq} e={e} />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
