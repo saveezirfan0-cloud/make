@@ -8,6 +8,27 @@ Built as a Next.js app so it deploys straight to **Vercel** with zero
 configuration and no database (state lives in your browser's localStorage; a
 Supabase-backed store can be added later for scheduling/history).
 
+## Visual editor
+
+A Make.com-style canvas is the default view. It renders the blueprint as
+circular module nodes wired left-to-right, with routers and if/else modules
+fanning branches out vertically (curved connectors, branch labels, filter
+badges). You can:
+
+- **Click any node** to open an inspector with type-specific settings — for an
+  HTTP module: URL, method, headers, query string, content type, body; for
+  Airtable: connection id, base/table, formula or record fields; etc.
+- **Click a “+”** between modules (or at a branch tip) to open a grouped module
+  picker (HTTP · Airtable · Flow control · Tools) and insert a module there.
+- **Add routers / if-else branches**, edit each branch's conditions
+  (`{{6.id}}` → `exists`, AND/OR groups), and add a **filter** to any module.
+- **Edit raw module JSON** per node, **undo**, and **delete** modules.
+
+The canvas and the **Blueprint JSON** tab are two views of the same data, so
+anything built visually exports as a Make-compatible blueprint and runs on the
+same engine. Paste an existing Make export in the JSON tab and it appears on the
+canvas.
+
 ## What it runs
 
 The engine natively understands Make.com blueprint JSON (`{"subflows":[{"flow":[...]}]}`):
