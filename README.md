@@ -76,6 +76,18 @@ requests without calling anything).
 Returns `{ ok, ops, durationMs, log: [...] }` with a per-module log
 (status, request with redacted auth headers, output, timing, bundle position).
 
+### Server-side secrets (environment variables)
+
+Instead of entering tokens in the UI, you can set them once as environment
+variables (Vercel → Project → Settings → Environment Variables):
+
+- `BP_VAR_<NAME>` → available to blueprints as `{{var.NAME}}`
+  (e.g. `BP_VAR_UNITE_API_TOKEN`)
+- `BP_CONN_<id>` → token for Make connection `__IMTCONN__ <id>`
+  (e.g. `BP_CONN_10209480` for the Airtable connection)
+
+Values entered in the UI override the environment defaults.
+
 ### Tests
 
 ```bash
