@@ -14,6 +14,27 @@ interface RunRequest {
   maxOps?: number;
 }
 
+/**
+ * Server-side secret fallbacks from environment variables (set them in
+ * Vercel → Project → Settings → Environment Variables):
+ *   BP_VAR_<NAME>   -> blueprint variable {{var.NAME}}
+ *   BP_CONN_<id>    -> token for Make connection __IMTCONN__ <id>
+ * Values sent by the client override these.
+ */
+function envDefaults(): {
+  variables: Record<string, string>;
+  connections: Record<string, { token: string }>;
+} {
+  const variables: Record<string, string> = {};
+  const connections: Record<string, { token: string }> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!v) continue;
+    if (k.startsWith('BP_VAR_')) variables[k.slice('BP_VAR_'.length)] = v;
+    else if (k.startsWith('BP_CONN_')) connections[k.slice('BP_CONN_'.length)] = { token: v };
+  }
+  return { variables, connections };
+}
+
 export async function POST(req: NextRequest) {
   let body: RunRequest;
   try {
@@ -27,9 +48,16 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  const env = envDefaults();
+  const clientVars = Object.fromEntries(
+    Object.entries(body.variables ?? {}).filter(([, v]) => v !== undefined && v !== ''),
+  );
+  const clientConns = Object.fromEntries(
+    Object.entries(body.connections ?? {}).filter(([, c]) => c?.token),
+  );
   const opts: RunOptions = {
-    variables: body.variables ?? {},
-    connections: body.connections ?? {},
+    variables: { ...env.variables, ...clientVars },
+    connections: { ...env.connections, ...clientConns },
     dryRun: body.dryRun === true,
     maxOps: Math.min(Math.max(Number(body.maxOps) || 5000, 1), 20000),
   };
