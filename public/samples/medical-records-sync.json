@@ -1,0 +1,2451 @@
+{
+  "name": "UniteCare → Airtable medical records sync",
+  "subflows": [
+    {
+      "flow": [
+        {
+          "id": 3,
+          "module": "http:ActionSendData",
+          "version": 3,
+          "parameters": {
+            "handleErrors": true,
+            "useNewZLibDeCompress": true
+          },
+          "mapper": {
+            "ca": "",
+            "qs": [],
+            "url": "https://ucexternalapiprod.uniteuae.care/gateway/GetMedicalRecordsDetails",
+            "data": "{\n\"from_date\": \"{{formatDate(addDays(now(); -7); \"DD-MM-YYYY\")}}\",\n\"to_date\": \"{{formatDate(now(); \"DD-MM-YYYY\")}}\"\n}",
+            "gzip": true,
+            "method": "post",
+            "headers": [
+              {
+                "name": "Content-type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer {{var.UNITE_API_TOKEN}}"
+              }
+            ],
+            "timeout": "",
+            "bodyType": "raw",
+            "contentType": "application/json",
+            "parseResponse": true,
+            "followRedirect": true,
+            "rejectUnauthorized": true
+          },
+          "metadata": {
+            "designer": {
+              "name": "Get Appointments"
+            }
+          }
+        },
+        {
+          "id": 4,
+          "module": "builtin:BasicFeeder",
+          "version": 1,
+          "parameters": {},
+          "mapper": {
+            "array": "{{3.data.Data}}"
+          },
+          "metadata": {
+            "designer": {
+              "name": "Iterate patients"
+            }
+          }
+        },
+        {
+          "id": 5,
+          "module": "builtin:BasicFeeder",
+          "version": 1,
+          "parameters": {},
+          "mapper": {
+            "array": "{{4.visitdetails}}"
+          },
+          "metadata": {
+            "designer": {
+              "name": "Iterate visits"
+            }
+          }
+        },
+        {
+          "id": 6,
+          "module": "airtable:ActionSearchRecords",
+          "version": 3,
+          "parameters": {
+            "__IMTCONN__": 10209480
+          },
+          "mapper": {
+            "base": "app7QJ2pvhADHQeBP",
+            "table": "tbl9856qJP9S7OEqB",
+            "formula": "{Patient Pin} = '{{4.patientpin}}'",
+            "maxRecords": "10",
+            "useColumnId": false
+          },
+          "metadata": {
+            "designer": {
+              "name": "Find patient"
+            }
+          }
+        },
+        {
+          "id": 123,
+          "module": "builtin:BasicIfElse",
+          "version": 1,
+          "mapper": null,
+          "branches": [
+            {
+              "merge": true,
+              "disabled": false,
+              "label": "Existing patient",
+              "type": "condition",
+              "conditions": [
+                [
+                  {
+                    "a": "{{6.id}}",
+                    "o": "exist"
+                  }
+                ]
+              ],
+              "flow": [
+                {
+                  "id": 7,
+                  "module": "airtable:ActionSearchRecords",
+                  "version": 3,
+                  "parameters": {
+                    "__IMTCONN__": 10209480
+                  },
+                  "mapper": {
+                    "base": "app7QJ2pvhADHQeBP",
+                    "table": "tblllKPKIY9qvMoEU",
+                    "formula": "AND(\n  ARRAYJOIN({Patient Pin (from Unite)}) = '{{4.patientpin}}',\n  DATETIME_FORMAT({Visit Date}, 'MM/DD/YYYY') = '{{formatDate(5.visitdate; \"MM/DD/YYYY\")}}',\n  {Doctor Name} = '{{5.doctorname}}'\n)",
+                    "maxRecords": "1",
+                    "useColumnId": false
+                  },
+                  "metadata": {
+                    "designer": {
+                      "name": "Find existing MRD"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "merge": true,
+              "disabled": false,
+              "label": "New patient, no MRD yet",
+              "type": "condition",
+              "conditions": [
+                [
+                  {
+                    "a": "{{6.id}}",
+                    "o": "notexist"
+                  }
+                ]
+              ],
+              "flow": [
+                {
+                  "id": 9,
+                  "module": "airtable:ActionCreateRecord",
+                  "version": 3,
+                  "parameters": {
+                    "__IMTCONN__": 10209480
+                  },
+                  "mapper": {
+                    "base": "app7QJ2pvhADHQeBP",
+                    "table": "tbl9856qJP9S7OEqB",
+                    "record": {
+                      "fld0rZhF2bjTxyiNS": "{{5.doctorname}}",
+                      "fld1Zt1g7IGjk2mOX": "{{formatDate(4.dateofbirth; \"MM/DD/YYYY\")}}",
+                      "fldGW2uKUvJ8Go98Q": "{{4.patientpin}}",
+                      "fldHk1eGk61Hqr3yB": "{{5.department}}",
+                      "fldWCINbQSFZUrBBd": "{{4.nationality}}",
+                      "fldXgsBUYTP2xvUv1": "{{4.gender}}",
+                      "fldZHFmhmfL6INxWR": "{{4.visitdate}}",
+                      "fldcF6Tlh1q8SYNsI": "{{4.patientname}}",
+                      "flddF5X0a7DtDJRNf": "{{4.mobilephone}}",
+                      "fldgSGQs00acVQccE": "{{5.followupvisit}}",
+                      "fldikPNTGpc52GqOW": "{{4.mailid}}",
+                      "fldluzXiKHaK4RfaW": "{{4.city}}",
+                      "fldsA7v4aGIVzv0S8": "{{5.clinicname}}",
+                      "fldwTnnvCipJeVvco": "{{5.visitdate}}"
+                    },
+                    "typecast": false,
+                    "useColumnId": true
+                  },
+                  "metadata": {
+                    "designer": {
+                      "name": "Create patient"
+                    }
+                  }
+                },
+                {
+                  "id": 135,
+                  "module": "util:SetVariable2",
+                  "version": 1,
+                  "parameters": {},
+                  "filter": null,
+                  "mapper": {
+                    "name": "pid",
+                    "scope": "roundtrip",
+                    "value": "{{9.id}}"
+                  },
+                  "metadata": {
+                    "designer": {
+                      "name": "Capture new patient id"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "merge": true,
+              "disabled": false,
+              "label": "",
+              "type": "else",
+              "flow": [
+                {
+                  "id": 124,
+                  "module": "placeholder:Placeholder"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 129,
+          "module": "builtin:BasicMerge",
+          "version": 1,
+          "filter": {
+            "name": "No existing MRD",
+            "conditions": [
+              [
+                {
+                  "a": "{{7.id}}",
+                  "o": "notexist"
+                }
+              ]
+            ]
+          },
+          "mapper": null,
+          "metadata": {
+            "designer": {
+              "name": "Merge · stop if visit already recorded"
+            }
+          }
+        },
+        {
+          "id": 134,
+          "module": "util:GetVariables",
+          "version": 1,
+          "parameters": {},
+          "filter": null,
+          "mapper": {
+            "variables": [
+              "mrid",
+              "pid"
+            ]
+          },
+          "metadata": {
+            "designer": {
+              "name": "Get variables"
+            }
+          }
+        },
+        {
+          "id": 11,
+          "module": "airtable:ActionUpdateRecords",
+          "version": 3,
+          "parameters": {
+            "__IMTCONN__": 10209480
+          },
+          "mapper": {
+            "id": "{{ifempty(6.id; 134.pid)}}",
+            "base": "app7QJ2pvhADHQeBP",
+            "table": "tbl9856qJP9S7OEqB",
+            "record": {
+              "fld0rZhF2bjTxyiNS": "{{5.doctorname}}",
+              "fldHk1eGk61Hqr3yB": "{{5.department}}",
+              "fldgSGQs00acVQccE": "{{5.followupvisit}}",
+              "fldsA7v4aGIVzv0S8": "{{5.clinicname}}",
+              "fldwTnnvCipJeVvco": "{{formatDate(5.visitdate; \"MM/DD/YYYY\")}}"
+            },
+            "typecast": false,
+            "useColumnId": true
+          },
+          "filter": {
+            "name": "Patient record resolved",
+            "conditions": [
+              [
+                {
+                  "a": "{{6.id}}",
+                  "o": "exist"
+                }
+              ],
+              [
+                {
+                  "a": "{{134.pid}}",
+                  "o": "exist"
+                }
+              ]
+            ]
+          },
+          "metadata": {
+            "designer": {
+              "name": "Update patient last visit"
+            }
+          }
+        },
+        {
+          "id": 13,
+          "module": "airtable:ActionCreateRecord",
+          "version": 3,
+          "parameters": {
+            "__IMTCONN__": 10209480
+          },
+          "mapper": {
+            "base": "app7QJ2pvhADHQeBP",
+            "table": "tblllKPKIY9qvMoEU",
+            "record": {
+              "fld5ONgPlFlyJFZYy": "{{5.notes.`Doctor Notes`}}",
+              "fld5eftp6BVHSyPQd": "{{5.diagnosis[].description}}",
+              "fldFzXAhtt2fcRTDy": "{{5.vitals[].`O2 % BldC Oximetry`}}",
+              "fldJQiC2fplhNXa1N": "{{5.notes.`History Of Present Illness`}}",
+              "fldJajCqvONmaX3XL": "{{5.vitals[].Height}}",
+              "fldKuI5eXoDJIiOcu": "{{formatDate(5.visitdate; \"MM/DD/YYYY\")}}",
+              "fldOVaKPQc3VUwJnh": "{{5.vitals[].Pulse}}",
+              "fldQEoJfTLKODHoq7": "{{5.vitals[].`BP Systolic`}}",
+              "fldQWA9jjupL6EF3L": "{{5.vitals[].`Body Temperature`}}",
+              "fldUGZGwjklowwHJI": "{{5.notes.`Review Of Systems`}}",
+              "fldVWIrd7336dmS6x": "{{5.notes.`Procedure Notes `}}",
+              "fldX8Chw8INeRhuTD": "{{5.notes.`Nurse Notes`}}",
+              "fldZiy0HG9KGApOtc": "{{5.doctorname}}",
+              "fldZsPHI9BBzWWgap": "{{5.notes.Complaints}}",
+              "fldhDyDyi1V5soDiO": "{{5.notes.`Plan of Treatment`}}",
+              "fldpNQHsUjrA9XG8a": "{{5.notes.`Observations/Physical Examination`}}",
+              "fldtMJzbQovI9IliR": "{{11.fldcF6Tlh1q8SYNsI}}",
+              "fldtxNjAanspw8h40": [
+                "{{11.id}}"
+              ],
+              "fldx5AdhYb49W946I": "{{5.notes.`Therapy Notes`}}",
+              "fldz0AtfcKuYy52FV": "{{5.vitals[].`BP Diastolic`}}",
+              "fldzdjzBPCdvG9U8U": "{{5.vitals[].`Weight Measured`}}"
+            },
+            "typecast": false,
+            "useColumnId": true
+          },
+          "metadata": {
+            "designer": {
+              "name": "Create medical record"
+            }
+          }
+        },
+        {
+          "id": 16,
+          "module": "util:SetVariable2",
+          "version": 1,
+          "parameters": {},
+          "mapper": {
+            "name": "activeMrdId",
+            "scope": "roundtrip",
+            "value": "{{13.id}}"
+          },
+          "metadata": {
+            "designer": {
+              "name": "Capture MRD id"
+            }
+          }
+        },
+        {
+          "id": 21,
+          "module": "builtin:BasicRouter",
+          "version": 1,
+          "filter": {
+            "name": "",
+            "conditions": [
+              [
+                {
+                  "a": "{{16.activeMrdId}}",
+                  "o": "exist"
+                }
+              ]
+            ]
+          },
+          "mapper": null,
+          "routes": [
+            {
+              "flow": [
+                {
+                  "id": 22,
+                  "module": "builtin:BasicFeeder",
+                  "version": 1,
+                  "parameters": {},
+                  "mapper": {
+                    "array": "{{5.diagnosis}}"
+                  },
+                  "metadata": {
+                    "designer": {
+                      "name": "Iterate diagnosis"
+                    }
+                  }
+                },
+                {
+                  "id": 136,
+                  "module": "builtin:BasicRouter",
+                  "version": 1,
+                  "filter": null,
+                  "mapper": null,
+                  "routes": [
+                    {
+                      "flow": [
+                        {
+                          "id": 23,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblZqf4Zcw5Kweadh",
+                            "formula": "{Code} = '{{22.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find diagnosis"
+                            }
+                          }
+                        },
+                        {
+                          "id": 24,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{23.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 25,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{23.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(23.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 26,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{25.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblZqf4Zcw5Kweadh/{{23.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fldhZEmogfSr6ImNV\": [\n      {{25.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 27,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{23.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblZqf4Zcw5Kweadh/{{23.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fldhZEmogfSr6ImNV\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 137,
+                          "module": "airtable:ActionUpdateRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "id": "{{13.id}}",
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblllKPKIY9qvMoEU",
+                            "record": {
+                              "fldSIH4uHnviEYYel": "{{22.code}}"
+                            },
+                            "typecast": false,
+                            "useColumnId": true
+                          },
+                          "filter": {
+                            "name": "Primary diagnosis",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{22.type}}",
+                                  "b": "Primary",
+                                  "o": "text:equal"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Set primary diagnosis"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "flow": [
+                {
+                  "id": 28,
+                  "module": "builtin:BasicFeeder",
+                  "version": 1,
+                  "parameters": {},
+                  "mapper": {
+                    "array": "{{5.medication}}"
+                  },
+                  "metadata": {
+                    "designer": {
+                      "name": "Iterate medication"
+                    }
+                  }
+                },
+                {
+                  "id": 29,
+                  "module": "builtin:BasicRouter",
+                  "version": 1,
+                  "mapper": null,
+                  "routes": [
+                    {
+                      "flow": [
+                        {
+                          "id": 30,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblLM2BXjA680GQws",
+                            "formula": "{DDC Code} = '{{28.localcode}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find medication"
+                            }
+                          }
+                        },
+                        {
+                          "id": 31,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{30.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 32,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{30.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(30.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 33,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{32.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblLM2BXjA680GQws/{{30.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fldpryRGaMe7cCqkd\": [\n      {{32.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 34,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{30.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblLM2BXjA680GQws/{{30.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fldpryRGaMe7cCqkd\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 35,
+                          "module": "util:TextAggregator",
+                          "version": 1,
+                          "parameters": {
+                            "feeder": 28,
+                            "rowSeparator": "other",
+                            "otherRowSeparator": ", "
+                          },
+                          "mapper": {
+                            "value": "{{28.dosagedays}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Aggregate dosage days"
+                            }
+                          }
+                        },
+                        {
+                          "id": 36,
+                          "module": "airtable:upsertRecord",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblllKPKIY9qvMoEU",
+                            "record": {
+                              "fldw8Oyu3hhgAS3gV": "{{35.text}}"
+                            },
+                            "recordId": "{{16.activeMrdId}}",
+                            "typecast": false,
+                            "useColumnId": true
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Save dosage days"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 37,
+                          "module": "util:TextAggregator",
+                          "version": 1,
+                          "parameters": {
+                            "feeder": 28,
+                            "rowSeparator": "other",
+                            "otherRowSeparator": ", "
+                          },
+                          "mapper": {
+                            "value": "{{28.totalquantity}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Aggregate quantities"
+                            }
+                          }
+                        },
+                        {
+                          "id": 38,
+                          "module": "airtable:upsertRecord",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblllKPKIY9qvMoEU",
+                            "record": {
+                              "fld2m2sHEXFI3hCvl": "{{37.text}}"
+                            },
+                            "recordId": "{{16.activeMrdId}}",
+                            "typecast": false,
+                            "useColumnId": true
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Save quantities"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "flow": [
+                {
+                  "id": 39,
+                  "module": "builtin:BasicFeeder",
+                  "version": 1,
+                  "parameters": {},
+                  "mapper": {
+                    "array": "{{5.items}}"
+                  },
+                  "metadata": {
+                    "designer": {
+                      "name": "Iterate item groups"
+                    }
+                  }
+                },
+                {
+                  "id": 40,
+                  "module": "builtin:BasicRouter",
+                  "version": 1,
+                  "mapper": null,
+                  "routes": [
+                    {
+                      "flow": [
+                        {
+                          "id": 41,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Procedure`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Procedure"
+                            }
+                          }
+                        },
+                        {
+                          "id": 42,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{41.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{41.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Procedure)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 43,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{42.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 44,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{42.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(42.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 45,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{44.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{42.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{44.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 46,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{42.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{42.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 47,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Investigations`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Investigations"
+                            }
+                          }
+                        },
+                        {
+                          "id": 48,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{47.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{47.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Investigations)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 49,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{48.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 50,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{48.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(48.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 51,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{50.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{48.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{50.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 52,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{48.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{48.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 53,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Radiology`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Radiology"
+                            }
+                          }
+                        },
+                        {
+                          "id": 54,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{53.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{53.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Radiology)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 55,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{54.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 56,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{54.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(54.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 57,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{56.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{54.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{56.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 58,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{54.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{54.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 59,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Intravenous Therapy`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Intravenous Therapy"
+                            }
+                          }
+                        },
+                        {
+                          "id": 60,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{59.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{59.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Intravenous Therapy)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 61,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{60.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 62,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{60.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(60.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 63,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{62.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{60.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{62.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 64,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{60.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{60.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 65,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Drugs`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Drugs"
+                            }
+                          }
+                        },
+                        {
+                          "id": 66,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{65.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{65.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Drugs)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 67,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{66.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 68,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{66.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(66.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 69,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{68.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{66.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{68.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 70,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{66.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{66.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 71,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Vaccine`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Vaccine"
+                            }
+                          }
+                        },
+                        {
+                          "id": 72,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{71.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{71.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Vaccine)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 73,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{72.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 74,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{72.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(72.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 75,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{74.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{72.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{74.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 76,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{72.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{72.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 77,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Other Services`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Other Services"
+                            }
+                          }
+                        },
+                        {
+                          "id": 78,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{77.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{77.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Other Services)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 79,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{78.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 80,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{78.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(78.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 81,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{80.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{78.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{80.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 82,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{78.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{78.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 83,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Retail Product`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Retail Product"
+                            }
+                          }
+                        },
+                        {
+                          "id": 84,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{83.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{83.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Retail Product)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 85,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{84.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 86,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{84.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(84.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 87,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{86.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{84.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{86.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 88,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{84.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{84.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 89,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Dental Procedures`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Dental Procedures"
+                            }
+                          }
+                        },
+                        {
+                          "id": 90,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{89.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{89.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Dental Procedures)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 91,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{90.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 92,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{90.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(90.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 93,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{92.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{90.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{92.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 94,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{90.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{90.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "flow": [
+                        {
+                          "id": 95,
+                          "module": "builtin:BasicFeeder",
+                          "version": 1,
+                          "parameters": {},
+                          "mapper": {
+                            "array": "{{39.`Home Healthcare`}}"
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Iterate Home Healthcare"
+                            }
+                          }
+                        },
+                        {
+                          "id": 96,
+                          "module": "airtable:ActionSearchRecords",
+                          "version": 3,
+                          "parameters": {
+                            "__IMTCONN__": 10209480
+                          },
+                          "mapper": {
+                            "base": "app7QJ2pvhADHQeBP",
+                            "table": "tblTJtk6aIMbwpoA2",
+                            "formula": "{Code} = '{{95.code}}'",
+                            "maxRecords": "10",
+                            "useColumnId": false
+                          },
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{95.code}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "metadata": {
+                            "designer": {
+                              "name": "Find item (Home Healthcare)"
+                            }
+                          }
+                        },
+                        {
+                          "id": 97,
+                          "module": "builtin:BasicRouter",
+                          "version": 1,
+                          "filter": {
+                            "name": "",
+                            "conditions": [
+                              [
+                                {
+                                  "a": "{{96.id}}",
+                                  "o": "exist"
+                                }
+                              ]
+                            ]
+                          },
+                          "mapper": null,
+                          "routes": [
+                            {
+                              "flow": [
+                                {
+                                  "id": 98,
+                                  "module": "util:SetVariable2",
+                                  "version": 1,
+                                  "parameters": {},
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{96.`Medical Records Data`}}",
+                                          "o": "exist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "name": "name",
+                                    "scope": "roundtrip",
+                                    "value": "{{replace(replace(replace(replace(toString(96.`Medical Records Data`); \",\"; \"\\\",\\\"\"); \"[\"; \"\\\"\"); \"]\"; \"\\\"\"); \"\\\",\\\"\" + space; \",\" + newline)}}"
+                                  }
+                                },
+                                {
+                                  "id": 99,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{98.name}}",
+                                          "b": "{{16.activeMrdId}}",
+                                          "o": "text:notcontain"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{96.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      {{98.name}},\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "flow": [
+                                {
+                                  "id": 100,
+                                  "module": "airtable:makeApiCall",
+                                  "version": 3,
+                                  "parameters": {
+                                    "__IMTCONN__": 10209480
+                                  },
+                                  "filter": {
+                                    "name": "",
+                                    "conditions": [
+                                      [
+                                        {
+                                          "a": "{{96.`Medical Records Data`}}",
+                                          "o": "notexist"
+                                        }
+                                      ]
+                                    ]
+                                  },
+                                  "mapper": {
+                                    "url": "v0/app7QJ2pvhADHQeBP/tblTJtk6aIMbwpoA2/{{96.id}}",
+                                    "method": "PATCH",
+                                    "headers": [
+                                      {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                      }
+                                    ],
+                                    "body": "{\n  \"fields\": {\n    \"fld8rbMC3zSkDqC8J\": [\n      \"{{16.activeMrdId}}\"\n    ]\n  }\n}"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "version": 1
+  }
+}
