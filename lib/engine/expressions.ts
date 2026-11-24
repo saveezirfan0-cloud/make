@@ -2,7 +2,7 @@
 //
 // Supports:
 //   {{3.data.Data}}                      module output references
-//   {{5.notes.`Doctor Notes`}}           backtick-quoted keys
+//   {{5.notes.`Gift Message`}}           backtick-quoted keys
 //   {{5.vitals[].Height}}                array mapping (joined with ", ")
 //   {{4.visitdetails}}                   raw values (arrays/objects preserved
 //                                        when the template is a single expression)

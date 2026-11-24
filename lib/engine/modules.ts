@@ -4,6 +4,7 @@
 
 import type { BlueprintModule, RunOptions, Scope } from './types';
 import { evalTemplate, toDisplayString } from './expressions';
+import { assertPublicUrl, BlockedUrlError } from './netguard';
 
 export interface ExecResult {
   /** Output bundles. Most modules emit exactly one; search modules may emit many. */
@@ -28,11 +29,37 @@ function asString(v: unknown): string {
   return toDisplayString(v);
 }
 
-async function timedFetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function timedFetch(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  opts: RunOptions = {},
+): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
+    if (!opts.blockPrivateNetwork) return await fetch(url, { ...init, signal: ctrl.signal });
+
+    // Guarded mode: check the URL, then follow redirects by hand so every hop
+    // is checked too.
+    let current = url;
+    let reqInit: RequestInit = { ...init };
+    for (let hop = 0; hop <= 5; hop++) {
+      try {
+        await assertPublicUrl(current);
+      } catch (e) {
+        if (e instanceof BlockedUrlError) throw new ModuleError(e.message);
+        throw e;
+      }
+      const res = await fetch(current, { ...reqInit, redirect: 'manual', signal: ctrl.signal });
+      const location = res.headers.get('location');
+      if (res.status < 300 || res.status >= 400 || !location) return res;
+      current = new URL(location, current).toString();
+      if (res.status === 301 || res.status === 302 || res.status === 303) {
+        reqInit = { ...reqInit, method: 'GET', body: undefined };
+      }
+    }
+    throw new ModuleError('Too many redirects');
   } finally {
     clearTimeout(t);
   }
@@ -127,7 +154,7 @@ export async function execHttp(
   }
 
   const timeoutMs = Number(m.timeout) > 0 ? Number(m.timeout) * 1000 : opts.requestTimeoutMs ?? 40000;
-  const res = await timedFetch(u.toString(), { method, headers, body }, timeoutMs);
+  const res = await timedFetch(u.toString(), { method, headers, body }, timeoutMs, opts);
   const data = await parseBody(res, m.parseResponse === true || m.parseResponse === 'true');
   const output = {
     statusCode: res.status,
@@ -177,12 +204,12 @@ async function airtableFetch(
     'Content-Type': 'application/json',
     ...((init.headers as Record<string, string>) ?? {}),
   };
-  const res = await timedFetch(url, { ...init, headers }, opts.requestTimeoutMs ?? 40000);
+  const res = await timedFetch(url, { ...init, headers }, opts.requestTimeoutMs ?? 40000, opts);
   const data = await parseBody(res, true);
   if (res.status === 429) {
     // one retry after Airtable's mandated 30s is too slow for serverless; wait 1.2s and retry once
     await new Promise((r) => setTimeout(r, 1200));
-    const res2 = await timedFetch(url, { ...init, headers }, opts.requestTimeoutMs ?? 40000);
+    const res2 = await timedFetch(url, { ...init, headers }, opts.requestTimeoutMs ?? 40000, opts);
     return { status: res2.status, data: await parseBody(res2, true) };
   }
   return { status: res.status, data };

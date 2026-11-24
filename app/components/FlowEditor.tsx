@@ -537,7 +537,7 @@ function Inspector({
               <TextInput
                 value={params.__IMTCONN__ ?? ''}
                 onChange={(v) => patchParam('__IMTCONN__', v)}
-                placeholder="e.g. 1001 — map to a token in Connections"
+                placeholder="e.g. 1001, then map it to a token in Connections"
               />
             </Field>
             {type !== 'airtable:makeApiCall' ? (

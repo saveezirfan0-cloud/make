@@ -68,6 +68,11 @@ export interface RunOptions {
   maxOps?: number;
   /** Per-request timeout in ms (default 40000) */
   requestTimeoutMs?: number;
+  /**
+   * Refuse requests (and redirect hops) to non-http(s) URLs and to private,
+   * loopback, link-local or reserved addresses. The API route turns this on.
+   */
+  blockPrivateNetwork?: boolean;
 }
 
 export type LogStatus = 'ok' | 'error' | 'filtered' | 'skipped' | 'dry-run';

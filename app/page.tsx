@@ -17,6 +17,7 @@ interface PersistedState {
   blueprintText: string;
   variables: KV[];
   connections: KV[];
+  runKey?: string;
 }
 
 function loadState(): PersistedState | null {
@@ -111,6 +112,7 @@ export default function Home() {
   const [tab, setTab] = useState<'visual' | 'json'>('visual');
   const [variables, setVariables] = useState<KV[]>([]);
   const [connections, setConnections] = useState<KV[]>([]);
+  const [runKey, setRunKey] = useState('');
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   const [extractedNote, setExtractedNote] = useState<string | null>(null);
@@ -122,6 +124,7 @@ export default function Home() {
       setBlueprintText(s.blueprintText ?? '');
       setVariables(s.variables ?? []);
       setConnections(s.connections ?? []);
+      setRunKey(s.runKey ?? '');
     }
     setLoadedFromStorage(true);
   }, []);
@@ -129,11 +132,11 @@ export default function Home() {
   useEffect(() => {
     if (!loadedFromStorage) return;
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ blueprintText, variables, connections }));
+      localStorage.setItem(LS_KEY, JSON.stringify({ blueprintText, variables, connections, runKey }));
     } catch {
       /* storage may be unavailable */
     }
-  }, [blueprintText, variables, connections, loadedFromStorage]);
+  }, [blueprintText, variables, connections, runKey, loadedFromStorage]);
 
   const parsed = useMemo<{ bp: Blueprint | null; error: string | null }>(() => {
     if (!blueprintText.trim()) return { bp: null, error: null };
@@ -168,7 +171,7 @@ export default function Home() {
   }, []);
 
   const loadSample = useCallback(async () => {
-    const res = await fetch('/samples/medical-records-sync.json');
+    const res = await fetch('/samples/orders-sync.json');
     const text = await res.text();
     setBlueprintText(JSON.stringify(JSON.parse(text), null, 2));
     setResult(null);
@@ -206,7 +209,7 @@ export default function Home() {
       try {
         const res = await fetch('/api/run', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(runKey ? { 'x-run-key': runKey } : {}) },
           body: JSON.stringify({
             blueprint: parsed.bp,
             dryRun,
@@ -230,7 +233,7 @@ export default function Home() {
         setRunning(false);
       }
     },
-    [parsed.bp, variables, connections],
+    [parsed.bp, variables, connections, runKey],
   );
 
   return (
@@ -336,6 +339,21 @@ export default function Home() {
           <div className="hint">
             Map each Make connection id to an API token (e.g. an Airtable personal access token). Server-side
             equivalent: <code>BP_CONN_&lt;id&gt;</code> env vars.
+          </div>
+        </div>
+        <div className="panel">
+          <h2>Run key</h2>
+          <input
+            type="password"
+            value={runKey}
+            onChange={(e) => setRunKey(e.target.value)}
+            placeholder="Needed for live runs on a shared deployment"
+            autoComplete="off"
+            style={{ width: '100%' }}
+          />
+          <div className="hint">
+            Dry runs work without it. Live runs need the deployment&apos;s <code>RUN_ACCESS_KEY</code>, so strangers
+            can&apos;t use the server to send requests. Stored in your browser.
           </div>
         </div>
       </div>

@@ -1,7 +1,13 @@
-// Generates public/samples/medical-records-sync.json — the bundled sample
-// scenario (ExampleAPI -> Airtable medical-records sync), slimmed to the
-// fields the engine executes. Secrets are referenced as {{var.*}}; the
-// original hardcoded bearer token is NOT included.
+// Generates public/samples/orders-sync.json, the bundled sample scenario: a
+// made-up web shop's orders pulled from an API into Airtable. Every name, URL
+// and ID in it is fictional. The shop API lives on example.com (reserved for
+// documentation), and the Airtable base comes from {{var.AIRTABLE_BASE_ID}},
+// so the scenario can be pointed at a base of your own.
+//
+// It exercises the same engine features as a real scenario: HTTP with a token
+// variable and date maths, nested iterators, Airtable search/create/update/
+// upsert and raw API calls, if/else with merge, routers, filters, variables
+// and a text aggregator.
 //
 // Run: npm run generate-sample
 
@@ -9,17 +15,18 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const BASE = 'REDACTED_AIRTABLE_ID';
-const T_SOURCE = 'REDACTED_AIRTABLE_ID';
-const T_MRD = 'REDACTED_AIRTABLE_ID';
-const T_DIAGNOSIS = 'REDACTED_AIRTABLE_ID';
-const T_MEDICATION = 'REDACTED_AIRTABLE_ID';
-const T_ITEMS = 'REDACTED_AIRTABLE_ID';
+const BASE = '{{var.AIRTABLE_BASE_ID}}';
+const T_CUSTOMERS = 'Customers';
+const T_ORDERS = 'Orders';
+const T_CATEGORIES = 'Categories';
+const T_PRODUCTS = 'Products';
+const T_ADDONS = 'Add-ons';
+// A placeholder Make connection id. Map it to your Airtable token under
+// Connections, or set an AIRTABLE_TOKEN variable.
 const CONN = 1001;
 
-const F_MRD_LINK_ON_DIAGNOSIS = 'REDACTED_AIRTABLE_ID';
-const F_MRD_LINK_ON_MEDICATION = 'REDACTED_AIRTABLE_ID';
-const F_MRD_LINK_ON_ITEMS = 'REDACTED_AIRTABLE_ID';
+// Linked-record fields that point back to Orders.
+const F_ORDERS_LINK = 'Orders';
 
 const at = (id, action, mapper, extra = {}) => ({
   id,
@@ -33,9 +40,9 @@ const at = (id, action, mapper, extra = {}) => ({
 const designer = (name) => ({ metadata: { designer: { name } } });
 
 // Make-style string surgery that turns a linked-record array into a quoted,
-// comma-separated JSON fragment (kept verbatim from the original scenario).
-const mrDataExpr = (searchId) =>
-  `{{replace(replace(replace(replace(toString(${searchId}.\`Medical Records Data\`); ","; "\\",\\""); "["; "\\""); "]"; "\\""); "\\",\\"" + space; "," + newline)}}`;
+// comma-separated JSON fragment, the way it's often done in Make.
+const linkedIdsExpr = (searchId) =>
+  `{{replace(replace(replace(replace(toString(${searchId}.\`${F_ORDERS_LINK}\`); ","; "\\",\\""); "["; "\\""); "]"; "\\""); "\\",\\"" + space; "," + newline)}}`;
 
 const patchLink = (id, table, linkField, recordIdExpr, arrayBody, filter) => ({
   id,
@@ -44,7 +51,7 @@ const patchLink = (id, table, linkField, recordIdExpr, arrayBody, filter) => ({
   parameters: { __IMTCONN__: CONN },
   filter,
   mapper: {
-    url: `v0/${BASE}/${table}/${recordIdExpr}`,
+    url: `v0/${BASE}/${encodeURIComponent(table)}/${recordIdExpr}`,
     method: 'PATCH',
     headers: [{ key: 'Content-Type', value: 'application/json' }],
     body: `{\n  "fields": {\n    "${linkField}": [\n      ${arrayBody}\n    ]\n  }\n}`,
@@ -52,10 +59,10 @@ const patchLink = (id, table, linkField, recordIdExpr, arrayBody, filter) => ({
 });
 
 /**
- * The repeated "link a looked-up record back to the active MRD" motif:
+ * The repeated "link a looked-up record back to the new order" motif:
  *   search by code -> if found:
- *     - MRD links already exist and don't contain ours -> PATCH append
- *     - no MRD links yet -> PATCH fresh
+ *     - order links already exist and don't contain ours -> PATCH append
+ *     - no order links yet -> PATCH fresh
  */
 function linkbackRouter({ searchId, setVarId, appendId, freshId, table, linkField }) {
   return {
@@ -74,28 +81,28 @@ function linkbackRouter({ searchId, setVarId, appendId, freshId, table, linkFiel
             parameters: {},
             filter: {
               name: '',
-              conditions: [[{ a: `{{${searchId}.\`Medical Records Data\`}}`, o: 'exist' }]],
+              conditions: [[{ a: `{{${searchId}.\`${F_ORDERS_LINK}\`}}`, o: 'exist' }]],
             },
-            mapper: { name: 'name', scope: 'roundtrip', value: mrDataExpr(searchId) },
+            mapper: { name: 'name', scope: 'roundtrip', value: linkedIdsExpr(searchId) },
           },
           patchLink(
             appendId,
             table,
             linkField,
             `{{${searchId}.id}}`,
-            `{{${setVarId}.name}},\n      "{{16.activeMrdId}}"`,
+            `{{${setVarId}.name}},\n      "{{16.activeOrderId}}"`,
             {
               name: '',
-              conditions: [[{ a: `{{${setVarId}.name}}`, b: '{{16.activeMrdId}}', o: 'text:notcontain' }]],
+              conditions: [[{ a: `{{${setVarId}.name}}`, b: '{{16.activeOrderId}}', o: 'text:notcontain' }]],
             },
           ),
         ],
       },
       {
         flow: [
-          patchLink(freshId, table, linkField, `{{${searchId}.id}}`, `"{{16.activeMrdId}}"`, {
+          patchLink(freshId, table, linkField, `{{${searchId}.id}}`, `"{{16.activeOrderId}}"`, {
             name: '',
-            conditions: [[{ a: `{{${searchId}.\`Medical Records Data\`}}`, o: 'notexist' }]],
+            conditions: [[{ a: `{{${searchId}.\`${F_ORDERS_LINK}\`}}`, o: 'notexist' }]],
           }),
         ],
       },
@@ -103,8 +110,8 @@ function linkbackRouter({ searchId, setVarId, appendId, freshId, table, linkFiel
   };
 }
 
-/** One item-category route: feeder -> search Items by code -> linkback. */
-function itemCategoryRoute(categoryKey, feederId) {
+/** One add-on group route: feeder -> search Add-ons by code -> linkback. */
+function addonGroupRoute(groupKey, feederId) {
   const searchId = feederId + 1;
   return {
     flow: [
@@ -113,22 +120,22 @@ function itemCategoryRoute(categoryKey, feederId) {
         module: 'builtin:BasicFeeder',
         version: 1,
         parameters: {},
-        mapper: { array: `{{39.\`${categoryKey}\`}}` },
-        ...designer(`Iterate ${categoryKey}`),
+        mapper: { array: `{{39.\`${groupKey}\`}}` },
+        ...designer(`Iterate ${groupKey}`),
       },
       at(
         searchId,
         'ActionSearchRecords',
         {
           base: BASE,
-          table: T_ITEMS,
+          table: T_ADDONS,
           formula: `{Code} = '{{${feederId}.code}}'`,
           maxRecords: '10',
           useColumnId: false,
         },
         {
           filter: { name: '', conditions: [[{ a: `{{${feederId}.code}}`, o: 'exist' }]] },
-          ...designer(`Find item (${categoryKey})`),
+          ...designer(`Find add-on (${groupKey})`),
         },
       ),
       linkbackRouter({
@@ -136,15 +143,15 @@ function itemCategoryRoute(categoryKey, feederId) {
         setVarId: searchId + 2,
         appendId: searchId + 3,
         freshId: searchId + 4,
-        table: T_ITEMS,
-        linkField: F_MRD_LINK_ON_ITEMS,
+        table: T_ADDONS,
+        linkField: F_ORDERS_LINK,
       }),
     ],
   };
 }
 
 const blueprint = {
-  name: 'ExampleAPI → Airtable medical records sync',
+  name: 'Sample: web shop orders → Airtable',
   subflows: [
     {
       flow: [
@@ -171,7 +178,7 @@ const blueprint = {
             followRedirect: true,
             rejectUnauthorized: true,
           },
-          ...designer('Get Appointments'),
+          ...designer('Get last 7 days of orders'),
         },
         {
           id: 4,
@@ -179,27 +186,27 @@ const blueprint = {
           version: 1,
           parameters: {},
           mapper: { array: '{{3.data.Data}}' },
-          ...designer('Iterate patients'),
+          ...designer('Iterate customers'),
         },
         {
           id: 5,
           module: 'builtin:BasicFeeder',
           version: 1,
           parameters: {},
-          mapper: { array: '{{4.visitdetails}}' },
-          ...designer('Iterate visits'),
+          mapper: { array: '{{4.orders}}' },
+          ...designer('Iterate orders'),
         },
         at(
           6,
           'ActionSearchRecords',
           {
             base: BASE,
-            table: T_SOURCE,
-            formula: "{Patient Pin} = '{{4.patientpin}}'",
+            table: T_CUSTOMERS,
+            formula: "{Customer Code} = '{{4.customercode}}'",
             maxRecords: '10',
             useColumnId: false,
           },
-          designer('Find patient'),
+          designer('Find customer'),
         ),
         {
           id: 123,
@@ -210,7 +217,7 @@ const blueprint = {
             {
               merge: true,
               disabled: false,
-              label: 'Existing patient',
+              label: 'Existing customer',
               type: 'condition',
               conditions: [[{ a: '{{6.id}}', o: 'exist' }]],
               flow: [
@@ -219,20 +226,20 @@ const blueprint = {
                   'ActionSearchRecords',
                   {
                     base: BASE,
-                    table: T_MRD,
+                    table: T_ORDERS,
                     formula:
-                      "AND(\n  ARRAYJOIN({Patient Pin (from Source)}) = '{{4.patientpin}}',\n  DATETIME_FORMAT({Visit Date}, 'MM/DD/YYYY') = '{{formatDate(5.visitdate; \"MM/DD/YYYY\")}}',\n  {Doctor Name} = '{{5.doctorname}}'\n)",
+                      "AND(\n  ARRAYJOIN({Customer Code (from Customer)}) = '{{4.customercode}}',\n  DATETIME_FORMAT({Order Date}, 'MM/DD/YYYY') = '{{formatDate(5.orderdate; \"MM/DD/YYYY\")}}',\n  {Order Number} = '{{5.ordernumber}}'\n)",
                     maxRecords: '1',
                     useColumnId: false,
                   },
-                  designer('Find existing MRD'),
+                  designer('Find existing order'),
                 ),
               ],
             },
             {
               merge: true,
               disabled: false,
-              label: 'New patient, no MRD yet',
+              label: 'New customer, no orders yet',
               type: 'condition',
               conditions: [[{ a: '{{6.id}}', o: 'notexist' }]],
               flow: [
@@ -241,27 +248,26 @@ const blueprint = {
                   'ActionCreateRecord',
                   {
                     base: BASE,
-                    table: T_SOURCE,
+                    table: T_CUSTOMERS,
                     record: {
-                      REDACTED_AIRTABLE_ID: '{{5.doctorname}}',
-                      REDACTED_AIRTABLE_ID: '{{formatDate(4.dateofbirth; "MM/DD/YYYY")}}',
-                      REDACTED_AIRTABLE_ID: '{{4.patientpin}}',
-                      REDACTED_AIRTABLE_ID: '{{5.department}}',
-                      REDACTED_AIRTABLE_ID: '{{4.nationality}}',
-                      REDACTED_AIRTABLE_ID: '{{4.gender}}',
-                      REDACTED_AIRTABLE_ID: '{{4.visitdate}}',
-                      REDACTED_AIRTABLE_ID: '{{4.patientname}}',
-                      REDACTED_AIRTABLE_ID: '{{4.mobilephone}}',
-                      REDACTED_AIRTABLE_ID: '{{5.followupvisit}}',
-                      REDACTED_AIRTABLE_ID: '{{4.mailid}}',
-                      REDACTED_AIRTABLE_ID: '{{4.city}}',
-                      REDACTED_AIRTABLE_ID: '{{5.clinicname}}',
-                      REDACTED_AIRTABLE_ID: '{{5.visitdate}}',
+                      'Customer Code': '{{4.customercode}}',
+                      'Customer Name': '{{4.customername}}',
+                      Email: '{{4.email}}',
+                      Phone: '{{4.phone}}',
+                      City: '{{4.city}}',
+                      Country: '{{4.country}}',
+                      Segment: '{{4.segment}}',
+                      'Signup Date': '{{formatDate(4.signupdate; "MM/DD/YYYY")}}',
+                      'Sales Rep': '{{5.salesrep}}',
+                      Channel: '{{5.channel}}',
+                      Store: '{{5.storename}}',
+                      'Last Order Date': '{{5.orderdate}}',
+                      'Next Delivery': '{{5.deliverydate}}',
                     },
                     typecast: false,
-                    useColumnId: true,
+                    useColumnId: false,
                   },
-                  designer('Create patient'),
+                  designer('Create customer'),
                 ),
                 {
                   id: 135,
@@ -269,8 +275,8 @@ const blueprint = {
                   version: 1,
                   parameters: {},
                   filter: null,
-                  mapper: { name: 'pid', scope: 'roundtrip', value: '{{9.id}}' },
-                  ...designer('Capture new patient id'),
+                  mapper: { name: 'cid', scope: 'roundtrip', value: '{{9.id}}' },
+                  ...designer('Capture new customer id'),
                 },
               ],
             },
@@ -287,10 +293,10 @@ const blueprint = {
           id: 129,
           module: 'builtin:BasicMerge',
           version: 1,
-          // Only continue when no MRD exists yet for this exact visit.
-          filter: { name: 'No existing MRD', conditions: [[{ a: '{{7.id}}', o: 'notexist' }]] },
+          // Only continue when this order isn't in Airtable yet.
+          filter: { name: 'Order not recorded yet', conditions: [[{ a: '{{7.id}}', o: 'notexist' }]] },
           mapper: null,
-          ...designer('Merge · stop if visit already recorded'),
+          ...designer('Merge · stop if order already recorded'),
         },
         {
           id: 134,
@@ -298,35 +304,35 @@ const blueprint = {
           version: 1,
           parameters: {},
           filter: null,
-          mapper: { variables: ['mrid', 'pid'] },
+          mapper: { variables: ['oid', 'cid'] },
           ...designer('Get variables'),
         },
         at(
           11,
           'ActionUpdateRecords',
           {
-            id: '{{ifempty(6.id; 134.pid)}}',
+            id: '{{ifempty(6.id; 134.cid)}}',
             base: BASE,
-            table: T_SOURCE,
+            table: T_CUSTOMERS,
             record: {
-              REDACTED_AIRTABLE_ID: '{{5.doctorname}}',
-              REDACTED_AIRTABLE_ID: '{{5.department}}',
-              REDACTED_AIRTABLE_ID: '{{5.followupvisit}}',
-              REDACTED_AIRTABLE_ID: '{{5.clinicname}}',
-              REDACTED_AIRTABLE_ID: '{{formatDate(5.visitdate; "MM/DD/YYYY")}}',
+              'Sales Rep': '{{5.salesrep}}',
+              Channel: '{{5.channel}}',
+              'Next Delivery': '{{5.deliverydate}}',
+              Store: '{{5.storename}}',
+              'Last Order Date': '{{formatDate(5.orderdate; "MM/DD/YYYY")}}',
             },
             typecast: false,
-            useColumnId: true,
+            useColumnId: false,
           },
           {
             filter: {
-              name: 'Patient record resolved',
+              name: 'Customer record resolved',
               conditions: [
                 [{ a: '{{6.id}}', o: 'exist' }],
-                [{ a: '{{134.pid}}', o: 'exist' }],
+                [{ a: '{{134.cid}}', o: 'exist' }],
               ],
             },
-            ...designer('Update patient last visit'),
+            ...designer('Update customer last order'),
           },
         ),
         at(
@@ -334,51 +340,46 @@ const blueprint = {
           'ActionCreateRecord',
           {
             base: BASE,
-            table: T_MRD,
+            table: T_ORDERS,
             record: {
-              REDACTED_AIRTABLE_ID: '{{5.notes.`Doctor Notes`}}',
-              REDACTED_AIRTABLE_ID: '{{5.diagnosis[].description}}',
-              REDACTED_AIRTABLE_ID: '{{5.vitals[].`O2 % BldC Oximetry`}}',
-              REDACTED_AIRTABLE_ID: '{{5.notes.`History Of Present Illness`}}',
-              REDACTED_AIRTABLE_ID: '{{5.vitals[].Height}}',
-              REDACTED_AIRTABLE_ID: '{{formatDate(5.visitdate; "MM/DD/YYYY")}}',
-              REDACTED_AIRTABLE_ID: '{{5.vitals[].Pulse}}',
-              REDACTED_AIRTABLE_ID: '{{5.vitals[].`BP Systolic`}}',
-              REDACTED_AIRTABLE_ID: '{{5.vitals[].`Body Temperature`}}',
-              REDACTED_AIRTABLE_ID: '{{5.notes.`Review Of Systems`}}',
-              REDACTED_AIRTABLE_ID: '{{5.notes.`Procedure Notes `}}',
-              REDACTED_AIRTABLE_ID: '{{5.notes.`Nurse Notes`}}',
-              REDACTED_AIRTABLE_ID: '{{5.doctorname}}',
-              REDACTED_AIRTABLE_ID: '{{5.notes.Complaints}}',
-              REDACTED_AIRTABLE_ID: '{{5.notes.`Plan of Treatment`}}',
-              REDACTED_AIRTABLE_ID: '{{5.notes.`Observations/Physical Examination`}}',
-              REDACTED_AIRTABLE_ID: '{{11.REDACTED_AIRTABLE_ID}}',
-              REDACTED_AIRTABLE_ID: ['{{11.id}}'],
-              REDACTED_AIRTABLE_ID: '{{5.notes.`Therapy Notes`}}',
-              REDACTED_AIRTABLE_ID: '{{5.vitals[].`BP Diastolic`}}',
-              REDACTED_AIRTABLE_ID: '{{5.vitals[].`Weight Measured`}}',
+              'Order Number': '{{5.ordernumber}}',
+              'Order Date': '{{formatDate(5.orderdate; "MM/DD/YYYY")}}',
+              Customer: ['{{11.id}}'],
+              'Customer Name': '{{11.`Customer Name`}}',
+              'Sales Rep': '{{5.salesrep}}',
+              Categories: '{{5.categories[].description}}',
+              Subtotal: '{{5.totals[].Subtotal}}',
+              'Discount %': '{{5.totals[].`Discount %`}}',
+              Shipping: '{{5.totals[].Shipping}}',
+              Tax: '{{5.totals[].Tax}}',
+              'Item Count': '{{5.totals[].Items}}',
+              'Weight kg': '{{5.totals[].`Weight kg`}}',
+              'Gift Message': '{{5.notes.`Gift Message`}}',
+              'Delivery Instructions': '{{5.notes.`Delivery Instructions`}}',
+              'Customer Comments': '{{5.notes.Comments}}',
+              'Packing Notes': '{{5.notes.`Packing Notes`}}',
             },
             typecast: false,
-            useColumnId: true,
+            useColumnId: false,
           },
-          designer('Create medical record'),
+          designer('Create order'),
         ),
         {
           id: 16,
           module: 'util:SetVariable2',
           version: 1,
           parameters: {},
-          mapper: { name: 'activeMrdId', scope: 'roundtrip', value: '{{13.id}}' },
-          ...designer('Capture MRD id'),
+          mapper: { name: 'activeOrderId', scope: 'roundtrip', value: '{{13.id}}' },
+          ...designer('Capture order id'),
         },
         {
           id: 21,
           module: 'builtin:BasicRouter',
           version: 1,
-          filter: { name: '', conditions: [[{ a: '{{16.activeMrdId}}', o: 'exist' }]] },
+          filter: { name: '', conditions: [[{ a: '{{16.activeOrderId}}', o: 'exist' }]] },
           mapper: null,
           routes: [
-            // ---- Diagnosis ------------------------------------------------
+            // ---- Categories -----------------------------------------------
             {
               flow: [
                 {
@@ -386,8 +387,8 @@ const blueprint = {
                   module: 'builtin:BasicFeeder',
                   version: 1,
                   parameters: {},
-                  mapper: { array: '{{5.diagnosis}}' },
-                  ...designer('Iterate diagnosis'),
+                  mapper: { array: '{{5.categories}}' },
+                  ...designer('Iterate categories'),
                 },
                 {
                   id: 136,
@@ -403,20 +404,20 @@ const blueprint = {
                           'ActionSearchRecords',
                           {
                             base: BASE,
-                            table: T_DIAGNOSIS,
+                            table: T_CATEGORIES,
                             formula: "{Code} = '{{22.code}}'",
                             maxRecords: '10',
                             useColumnId: false,
                           },
-                          designer('Find diagnosis'),
+                          designer('Find category'),
                         ),
                         linkbackRouter({
                           searchId: 23,
                           setVarId: 25,
                           appendId: 26,
                           freshId: 27,
-                          table: T_DIAGNOSIS,
-                          linkField: F_MRD_LINK_ON_DIAGNOSIS,
+                          table: T_CATEGORIES,
+                          linkField: F_ORDERS_LINK,
                         }),
                       ],
                     },
@@ -428,17 +429,17 @@ const blueprint = {
                           {
                             id: '{{13.id}}',
                             base: BASE,
-                            table: T_MRD,
-                            record: { REDACTED_AIRTABLE_ID: '{{22.code}}' },
+                            table: T_ORDERS,
+                            record: { 'Main Category': '{{22.code}}' },
                             typecast: false,
-                            useColumnId: true,
+                            useColumnId: false,
                           },
                           {
                             filter: {
-                              name: 'Primary diagnosis',
+                              name: 'Main category',
                               conditions: [[{ a: '{{22.type}}', b: 'Primary', o: 'text:equal' }]],
                             },
-                            ...designer('Set primary diagnosis'),
+                            ...designer('Set main category'),
                           },
                         ),
                       ],
@@ -447,7 +448,7 @@ const blueprint = {
                 },
               ],
             },
-            // ---- Medication ----------------------------------------------
+            // ---- Order lines ----------------------------------------------
             {
               flow: [
                 {
@@ -455,8 +456,8 @@ const blueprint = {
                   module: 'builtin:BasicFeeder',
                   version: 1,
                   parameters: {},
-                  mapper: { array: '{{5.medication}}' },
-                  ...designer('Iterate medication'),
+                  mapper: { array: '{{5.lines}}' },
+                  ...designer('Iterate order lines'),
                 },
                 {
                   id: 29,
@@ -471,20 +472,20 @@ const blueprint = {
                           'ActionSearchRecords',
                           {
                             base: BASE,
-                            table: T_MEDICATION,
-                            formula: "{DDC Code} = '{{28.localcode}}'",
+                            table: T_PRODUCTS,
+                            formula: "{SKU} = '{{28.sku}}'",
                             maxRecords: '10',
                             useColumnId: false,
                           },
-                          designer('Find medication'),
+                          designer('Find product'),
                         ),
                         linkbackRouter({
                           searchId: 30,
                           setVarId: 32,
                           appendId: 33,
                           freshId: 34,
-                          table: T_MEDICATION,
-                          linkField: F_MRD_LINK_ON_MEDICATION,
+                          table: T_PRODUCTS,
+                          linkField: F_ORDERS_LINK,
                         }),
                       ],
                     },
@@ -495,21 +496,21 @@ const blueprint = {
                           module: 'util:TextAggregator',
                           version: 1,
                           parameters: { feeder: 28, rowSeparator: 'other', otherRowSeparator: ', ' },
-                          mapper: { value: '{{28.dosagedays}}' },
-                          ...designer('Aggregate dosage days'),
+                          mapper: { value: '{{28.quantity}}' },
+                          ...designer('Aggregate quantities'),
                         },
                         at(
                           36,
                           'upsertRecord',
                           {
                             base: BASE,
-                            table: T_MRD,
-                            record: { REDACTED_AIRTABLE_ID: '{{35.text}}' },
-                            recordId: '{{16.activeMrdId}}',
+                            table: T_ORDERS,
+                            record: { Quantities: '{{35.text}}' },
+                            recordId: '{{16.activeOrderId}}',
                             typecast: false,
-                            useColumnId: true,
+                            useColumnId: false,
                           },
-                          designer('Save dosage days'),
+                          designer('Save quantities'),
                         ),
                       ],
                     },
@@ -520,21 +521,21 @@ const blueprint = {
                           module: 'util:TextAggregator',
                           version: 1,
                           parameters: { feeder: 28, rowSeparator: 'other', otherRowSeparator: ', ' },
-                          mapper: { value: '{{28.totalquantity}}' },
-                          ...designer('Aggregate quantities'),
+                          mapper: { value: '{{28.unitprice}}' },
+                          ...designer('Aggregate unit prices'),
                         },
                         at(
                           38,
                           'upsertRecord',
                           {
                             base: BASE,
-                            table: T_MRD,
-                            record: { REDACTED_AIRTABLE_ID: '{{37.text}}' },
-                            recordId: '{{16.activeMrdId}}',
+                            table: T_ORDERS,
+                            record: { 'Unit Prices': '{{37.text}}' },
+                            recordId: '{{16.activeOrderId}}',
                             typecast: false,
-                            useColumnId: true,
+                            useColumnId: false,
                           },
-                          designer('Save quantities'),
+                          designer('Save unit prices'),
                         ),
                       ],
                     },
@@ -542,7 +543,7 @@ const blueprint = {
                 },
               ],
             },
-            // ---- Items (procedures, labs, drugs, ...) --------------------
+            // ---- Add-ons (gift wrap, warranty, ...) ---------------------
             {
               flow: [
                 {
@@ -550,8 +551,8 @@ const blueprint = {
                   module: 'builtin:BasicFeeder',
                   version: 1,
                   parameters: {},
-                  mapper: { array: '{{5.items}}' },
-                  ...designer('Iterate item groups'),
+                  mapper: { array: '{{5.addons}}' },
+                  ...designer('Iterate add-on groups'),
                 },
                 {
                   id: 40,
@@ -559,16 +560,11 @@ const blueprint = {
                   version: 1,
                   mapper: null,
                   routes: [
-                    itemCategoryRoute('Procedure', 41),
-                    itemCategoryRoute('Investigations', 47),
-                    itemCategoryRoute('Radiology', 53),
-                    itemCategoryRoute('Intravenous Therapy', 59),
-                    itemCategoryRoute('Drugs', 65),
-                    itemCategoryRoute('Vaccine', 71),
-                    itemCategoryRoute('Other Services', 77),
-                    itemCategoryRoute('Retail Product', 83),
-                    itemCategoryRoute('Dental Procedures', 89),
-                    itemCategoryRoute('Home Healthcare', 95),
+                    addonGroupRoute('Gift Wrap', 41),
+                    addonGroupRoute('Warranty', 47),
+                    addonGroupRoute('Accessories', 53),
+                    addonGroupRoute('Installation', 59),
+                    addonGroupRoute('Subscription', 65),
                   ],
                 },
               ],
@@ -582,7 +578,7 @@ const blueprint = {
 };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const outPath = join(__dirname, '..', 'public', 'samples', 'medical-records-sync.json');
+const outPath = join(__dirname, '..', 'public', 'samples', 'orders-sync.json');
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, JSON.stringify(blueprint, null, 2) + '\n');
 console.log(`Wrote ${outPath}`);
